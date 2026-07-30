@@ -1,0 +1,44 @@
+# WIF export — proof that a Descope snapshot export can authenticate with a GitHub OIDC
+# token (Workload Identity Federation) INSTEAD of a stored management key.
+#
+# How it works: GitHub mints this job's OIDC token; we hand that token to the descopecli
+# export action in place of `management_key`. The CLI/SDK sends it as `Bearer <projectId>:<token>`,
+# which the Descope management interceptor's WIF branch detects (GitHub issuer) and authorizes as
+# an ephemeral, management-equivalent request. No `MANAGEMENT_KEY` secret is stored anywhere.
+#
+# PREREQUISITES to actually run green (all on the Descope side):
+#   1. DESCOPE_BASE_URL must point at an environment running the WIF backend branch
+#      (feat/wif-management-p1). NOTE: davidb.descope.team currently runs main → this 401s until
+#      the branch is deployed there.
+#   2. That env must trust the GitHub issuer for WIF and have the flags on:
+#      MGMT_WIF_MANAGEMENT_GLOBAL_ENABLED=true, MGMT_WIF_MANAGEMENT_PASSTHROUGH=true,
+#      FF_COMPANY_ID_TO_CONTEXT_INTERCEPTOR=true, and the repo's OIDC sub/company mapping configured.
+#   3. Repo variables: DESCOPE_PROJECT_ID (source project), DESCOPE_BASE_URL.
+# ExportSnapshot IS in the WIF method allowlist, so the exchange is not blocked by default-deny.
+name: wif-export
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write # REQUIRED — lets GitHub mint the OIDC token
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub OIDC token
+        run: |
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=descope" | jq -r .value)
+          [ -n "$TOKEN" ] && [ "$TOKEN" != null ] || { echo "no GitHub OIDC token minted"; exit 1; }
+          echo "GH_JWT=$TOKEN" >> "$GITHUB_ENV"
+
+      # WIF swap: the GitHub OIDC token is passed as `management_key` (no stored secret).
+      - name: Export snapshot via WIF
+        uses: descope/descopecli/.github/actions/export@v0.8.11
+        with:
+          project_id: ${{ vars.DESCOPE_PROJECT_ID }}
+          management_key: ${{ env.GH_JWT }} # ← GitHub OIDC token instead of a static management key
+          descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
+          files_path: ProjectSnapshot
