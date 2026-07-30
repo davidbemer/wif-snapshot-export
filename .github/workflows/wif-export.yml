@@ -35,10 +35,15 @@ jobs:
           echo "GH_JWT=$TOKEN" >> "$GITHUB_ENV"
 
       # WIF swap: the GitHub OIDC token is passed as `management_key` (no stored secret).
-      - name: Export snapshot via WIF
-        uses: descope/descopecli/.github/actions/export@v0.8.11
-        with:
-          project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
-          management_key: ${{ env.GH_JWT }} # ← GitHub OIDC token instead of a static management key
-          descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
-          files_path: ProjectSnapshot
+      - name: Export snapshot via WIF (curl, same call as descopecli)
+        run: |
+          # export — project is in the "<projectId>:<token>" bearer prefix; token replaces the mgmt key
+          CODE=$(curl -sS -o snapshot.json -w '%{http_code}' \
+            -X POST "${{ vars.DESCOPE_BASE_URL }}/v1/mgmt/project/snapshot/export" \
+            -H "Authorization: Bearer ${{ vars.DESCOPE_PROJECT_ID }}:$GH_JWT" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "POST /v1/mgmt/project/snapshot/export -> HTTP $CODE"
+          head -c 500 snapshot.json; echo
+          [ "$CODE" = "200" ] || { echo "export failed (body above)"; exit 1; }
+          echo "WIF snapshot export succeeded ($(wc -c < snapshot.json) bytes)"
