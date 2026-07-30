@@ -37,6 +37,7 @@ jobs:
       # WIF swap: the GitHub OIDC token is passed as `management_key` (no stored secret).
       - name: Export snapshot via WIF (curl, same call as descopecli)
         run: |
+          echo "GH JWT ->" $GH_JWT 
           # export — project is in the "<projectId>:<token>" bearer prefix; token replaces the mgmt key
           CODE=$(curl -sS -o snapshot.json -w '%{http_code}' \
             -X POST "${{ vars.DESCOPE_BASE_URL }}/v1/mgmt/project/snapshot/export" \
