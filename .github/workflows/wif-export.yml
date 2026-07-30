@@ -13,7 +13,7 @@
 #   2. That env must trust the GitHub issuer for WIF and have the flags on:
 #      MGMT_WIF_MANAGEMENT_GLOBAL_ENABLED=true, MGMT_WIF_MANAGEMENT_PASSTHROUGH=true,
 #      FF_COMPANY_ID_TO_CONTEXT_INTERCEPTOR=true, and the repo's OIDC sub/company mapping configured.
-#   3. Repo variables: DESCOPE_PROJECT_ID (source project), DESCOPE_BASE_URL.
+#   3. Repo variables: PRODUCTION_PROJECT_ID (source project), DESCOPE_BASE_URL.
 # ExportSnapshot IS in the WIF method allowlist, so the exchange is not blocked by default-deny.
 name: wif-export
 on:
@@ -43,7 +43,7 @@ jobs:
           # export — project is in the "<projectId>:<token>" bearer prefix; token replaces the mgmt key
           CODE=$(curl -sS -o snapshot.json -w '%{http_code}' \
             -X POST "${{ vars.DESCOPE_BASE_URL }}/v1/mgmt/project/snapshot/export" \
-            -H "Authorization: Bearer ${{ vars.DESCOPE_PROJECT_ID }}:$GH_JWT" \
+            -H "Authorization: Bearer ${{ vars.PRODUCTION_PROJECT_ID }}:$GH_JWT" \
             -H "Content-Type: application/json" \
             -d '{}')
           echo "POST /v1/mgmt/project/snapshot/export -> HTTP $CODE"
