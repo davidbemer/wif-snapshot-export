@@ -1,9 +1,9 @@
 # WIF export — proof that a Descope snapshot export can authenticate with a GitHub OIDC
 # token (Workload Identity Federation) INSTEAD of a stored management key.
 #
-# How it works: GitHub mints this job's OIDC token; we curl the export endpoint directly
-# (the same call the descopecli export action makes) with `Bearer <projectId>:<token>`,
-# which the Descope management interceptor's WIF branch detects (GitHub issuer) and authorizes as
+# How it works: GitHub mints this job's OIDC token; we hand that token to the descopecli
+# export action as `management_key`. The CLI sends it as `Bearer <projectId>:<token>`, which
+# the Descope management interceptor's WIF branch detects (GitHub issuer) and authorizes as
 # an ephemeral, management-equivalent request. No `MANAGEMENT_KEY` secret is stored anywhere.
 #
 # PREREQUISITES to actually run green (all on the Descope side):
@@ -21,6 +21,8 @@ on:
 permissions:
   id-token: write # REQUIRED — lets GitHub mint the OIDC token
   contents: read
+env:
+  FILES_PATH: 'ProjectSnapshot'
 jobs:
   export:
     runs-on: ubuntu-latest
@@ -36,17 +38,20 @@ jobs:
           echo "::add-mask::$TOKEN"
           echo "GH_JWT=$TOKEN" >> "$GITHUB_ENV"
 
-      # WIF swap: the GitHub OIDC token stands in for the management key (no stored secret).
-      - name: Export snapshot via WIF (curl, same call as descopecli)
-        run: |
-          set -euo pipefail
-          # export — project is in the "<projectId>:<token>" bearer prefix; token replaces the mgmt key
-          CODE=$(curl -sS -o snapshot.json -w '%{http_code}' \
-            -X POST "${{ vars.DESCOPE_BASE_URL }}/v1/mgmt/project/snapshot/export" \
-            -H "Authorization: Bearer ${{ vars.PRODUCTION_PROJECT_ID }}:$GH_JWT" \
-            -H "Content-Type: application/json" \
-            -d '{}')
-          echo "POST /v1/mgmt/project/snapshot/export -> HTTP $CODE"
-          head -c 500 snapshot.json; echo
-          [ "$CODE" = "200" ] || { echo "export failed (body above)"; exit 1; }
-          echo "WIF snapshot export succeeded ($(wc -c < snapshot.json) bytes)"
+      # WIF swap: the GitHub OIDC token is passed as `management_key` (no stored secret).
+      - name: Export Snapshot
+        id: export
+        uses: descope/descopecli/.github/actions/export@v0.8.11
+        with:
+          project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
+          management_key: ${{ env.GH_JWT }}
+          descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
+          files_path: ${{ env.FILES_PATH }}
+
+      - name: Upload snapshot artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-snapshot
+          path: ${{ env.FILES_PATH }}
+          if-no-files-found: ignore
