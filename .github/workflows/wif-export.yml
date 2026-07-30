@@ -38,7 +38,7 @@ jobs:
       - name: Export snapshot via WIF
         uses: descope/descopecli/.github/actions/export@v0.8.11
         with:
-          project_id: ${{ vars.DESCOPE_PROJECT_ID }}
+          project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
           management_key: ${{ env.GH_JWT }} # ← GitHub OIDC token instead of a static management key
           descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
           files_path: ProjectSnapshot
