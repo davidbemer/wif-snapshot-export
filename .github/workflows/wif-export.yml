@@ -37,6 +37,9 @@ jobs:
           [ -n "$TOKEN" ] && [ "$TOKEN" != null ] || { echo "no GitHub OIDC token minted"; exit 1; }
           echo "::add-mask::$TOKEN"
           echo "GH_JWT=$TOKEN" >> "$GITHUB_ENV"
+      - name: Install descopecli from branch
+        run: |
+          go install github.com/descope/descopecli@feat/wif-token-credential
 
       # WIF swap: the GitHub OIDC token is passed as `management_key` (no stored secret).
       - name: Export Snapshot
