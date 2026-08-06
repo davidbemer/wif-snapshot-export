@@ -37,14 +37,14 @@ jobs:
           [ -n "$TOKEN" ] && [ "$TOKEN" != null ] || { echo "no GitHub OIDC token minted"; exit 1; }
           echo "::add-mask::$TOKEN"
           echo "GH_JWT=$TOKEN" >> "$GITHUB_ENV"
+
       - name: Install descopecli from branch
         run: |
-          go install github.com/descope/descopecli@feat/wif-token-credential
+          go install github.com/descope/descopecli@$4fd3998d5c60a36392bfa5ffd71a31614402423b
 
-      # WIF swap: the GitHub OIDC token is passed as `management_key` (no stored secret).
       - name: Export Snapshot
         id: export
-        uses: descope/descopecli/.github/actions/export@feat/wif-token-credential
+        uses: github.com/descope/descopecli@$4fd3998d5c60a36392bfa5ffd71a31614402423b
         with:
           project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
           management_key: ${{ 'env.GH_JWT' }}
