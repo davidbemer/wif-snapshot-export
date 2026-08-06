@@ -29,21 +29,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Mint GitHub OIDC token
-        run: |
-          set -euo pipefail
-          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=descope" | jq -r .value)
-          [ -n "$TOKEN" ] && [ "$TOKEN" != null ] || { echo "no GitHub OIDC token minted"; exit 1; }
-          echo "::add-mask::$TOKEN"
-          echo "GH_JWT=$TOKEN" >> "$GITHUB_ENV"
+      # Step 1: Mint the OIDC token cleanly using GitHub's core JS library
+      - name: Fetch OIDC Token
+        id: oidc
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('descope');
+            core.setOutput('token', token);
 
       - name: Export Snapshot
         id: export
         uses: descope/descopecli/.github/actions/export@4fd3998d5c60a36392bfa5ffd71a31614402423b
         with:
           project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
-          management_key: ${{ env.GH_JWT }}
+          management_key: ${{ steps.oidc.outputs.token }}
           descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
           files_path: ${{ env.FILES_PATH }}
           descopecli_version: 4fd3998d5c60a36392bfa5ffd71a31614402423b
