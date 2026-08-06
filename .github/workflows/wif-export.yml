@@ -44,7 +44,7 @@ jobs:
         uses: descope/descopecli/.github/actions/export@feat/wif-token-credential
         with:
           project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
-          management_key: ${{ 'CATO' }}
+          management_key: ${{ 'env.GH_JWT' }}
           descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
           files_path: ${{ env.FILES_PATH }}
 
