@@ -43,7 +43,7 @@ jobs:
         uses: descope/descopecli/.github/actions/export@35606baf32f349fd252223b994c7bde914780f3a
         with:
           project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
-          workload_identity_token: ${{ steps.oidc.outputs.token }}
+          workload_identity_token: "CATO"
           descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
           files_path: ${{ env.FILES_PATH }}
           descopecli_version: 35606baf32f349fd252223b994c7bde914780f3a
