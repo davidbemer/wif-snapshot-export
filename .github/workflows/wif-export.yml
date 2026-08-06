@@ -38,18 +38,15 @@ jobs:
           echo "::add-mask::$TOKEN"
           echo "GH_JWT=$TOKEN" >> "$GITHUB_ENV"
 
-      - name: Install descopecli from branch
-        run: |
-          go install github.com/descope/descopecli@4fd3998d5c60a36392bfa5ffd71a31614402423b
-
       - name: Export Snapshot
         id: export
         uses: descope/descopecli/.github/actions/export@4fd3998d5c60a36392bfa5ffd71a31614402423b
         with:
           project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
-          management_key: ${{ 'env.GH_JWT' }}
+          management_key: ${{ env.GH_JWT }}
           descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
           files_path: ${{ env.FILES_PATH }}
+          descopecli_version: 4fd3998d5c60a36392bfa5ffd71a31614402423b
 
       - name: Upload snapshot artifact
         if: always()
