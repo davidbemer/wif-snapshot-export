@@ -44,7 +44,7 @@ jobs:
 
       - name: Export Snapshot
         id: export
-        uses: github.com/descope/descopecli@$4fd3998d5c60a36392bfa5ffd71a31614402423b
+        uses: descope/descopecli/.github/actions/export@feat/wif-token-credential
         with:
           project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
           management_key: ${{ 'env.GH_JWT' }}
