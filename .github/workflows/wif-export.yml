@@ -1,48 +1,57 @@
+# WIF export — proof that a Descope snapshot export can authenticate with a GitHub OIDC
+# token (Workload Identity Federation) INSTEAD of a stored management key.
+#
+# How it works: GitHub mints this job's OIDC token; we hand that token to the descopecli
+# export action as `management_key`. The CLI sends it as `Bearer <projectId>:<token>`, which
+# the Descope management interceptor's WIF branch detects (GitHub issuer) and authorizes as
+# an ephemeral, management-equivalent request. No `MANAGEMENT_KEY` secret is stored anywhere.
+#
+# PREREQUISITES to actually run green (all on the Descope side):
+#   1. DESCOPE_BASE_URL must point at an environment running the WIF backend branch
+#      (feat/wif-management-p1). NOTE: davidb.descope.team currently runs main → this 401s until
+#      the branch is deployed there.
+#   2. That env must trust the GitHub issuer for WIF and have the flags on:
+#      MGMT_WIF_MANAGEMENT_GLOBAL_ENABLED=true, MGMT_WIF_MANAGEMENT_PASSTHROUGH=true,
+#      FF_COMPANY_ID_TO_CONTEXT_INTERCEPTOR=true, and the repo's OIDC sub/company mapping configured.
+#   3. Repo variables: PRODUCTION_PROJECT_ID (source project), DESCOPE_BASE_URL.
+# ExportSnapshot IS in the WIF method allowlist, so the exchange is not blocked by default-deny.
 name: wif-export
 on:
   workflow_dispatch:
-
 permissions:
   id-token: write # REQUIRED — lets GitHub mint the OIDC token
   contents: read
-
+env:
+  FILES_PATH: "ProjectSnapshot"
 jobs:
   export:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Step 1: Mint the OIDC token cleanly using GitHub's core JS library
-      - name: Fetch OIDC Token
-        id: oidc
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const token = await core.getIDToken('descope');
-            core.setOutput('token', token);
-
-      # Step 2: Export snapshot via WIF
-      - name: Export snapshot via WIF
-        env:
-          DESCOPE_BASE_URL: ${{ vars.DESCOPE_BASE_URL }}
-          PROJECT_ID: ${{ vars.PRODUCTION_PROJECT_ID }}
-          GH_JWT: ${{ steps.oidc.outputs.token }}
+      - name: Mint GitHub OIDC token
         run: |
           set -euo pipefail
-          
-          # Use env vars directly in curl to avoid payload injection issues
-          CODE=$(curl -sS -o snapshot.json -w '%{http_code}' \
-            -X POST "${DESCOPE_BASE_URL}/v1/mgmt/project/snapshot/export" \
-            -H "Authorization: Bearer ${PROJECT_ID}:${GH_JWT}" \
-            -H "Content-Type: application/json" \
-            -d '{}')
-            
-          echo "POST /v1/mgmt/project/snapshot/export -> HTTP $CODE"
-          head -c 500 snapshot.json; echo
-          
-          if [ "$CODE" != "200" ]; then
-            echo "Export failed with HTTP status $CODE"
-            exit 1
-          fi
-          
-          echo "WIF snapshot export succeeded ($(wc -c < snapshot.json) bytes)"
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=descope" | jq -r .value)
+          [ -n "$TOKEN" ] && [ "$TOKEN" != null ] || { echo "no GitHub OIDC token minted"; exit 1; }
+          echo "::add-mask::$TOKEN"
+          echo "GH_JWT=$TOKEN" >> "$GITHUB_ENV"
+
+      # WIF swap: the GitHub OIDC token is passed as `management_key` (no stored secret).
+      - name: Export Snapshot
+        id: export
+        uses: descope/descopecli/.github/actions/export@feat/wif-token-credential
+        with:
+          project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
+          workload_identity_token: ${{ env.GH_JWT }}
+          descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
+          files_path: ${{ env.FILES_PATH }}
+
+      - name: Upload snapshot artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-snapshot
+          path: ${{ env.FILES_PATH }}
+          if-no-files-found: ignore
