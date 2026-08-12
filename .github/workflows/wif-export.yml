@@ -1,57 +1,121 @@
-# WIF export — proof that a Descope snapshot export can authenticate with a GitHub OIDC
-# token (Workload Identity Federation) INSTEAD of a stored management key.
+# Export a Descope project snapshot authenticating with this job's OWN GitHub OIDC
+# token. No management key secret is stored anywhere in this repository.
 #
-# How it works: GitHub mints this job's OIDC token; we hand that token to the descopecli
-# export action as `management_key`. The CLI sends it as `Bearer <projectId>:<token>`, which
-# the Descope management interceptor's WIF branch detects (GitHub issuer) and authorizes as
-# an ephemeral, management-equivalent request. No `MANAGEMENT_KEY` secret is stored anywhere.
+# The credential is `<projectId>:<jwt>:<keyId>` — the Management API's existing
+# three-part `projectID:JWT:AccessKey` authorization form. The workload NAMES the
+# management key it acts as (the way sts:AssumeRoleWithWebIdentity requires a
+# RoleArn), and the request is authorized with that key's own roles. So the claim
+# filters on the Descope side are a guard on whether this token may use the key,
+# not a selector for which key it gets.
 #
-# PREREQUISITES to actually run green (all on the Descope side):
-#   1. DESCOPE_BASE_URL must point at an environment running the WIF backend branch
-#      (feat/wif-management-p1). NOTE: davidb.descope.team currently runs main → this 401s until
-#      the branch is deployed there.
-#   2. That env must trust the GitHub issuer for WIF and have the flags on:
-#      MGMT_WIF_MANAGEMENT_GLOBAL_ENABLED=true, MGMT_WIF_MANAGEMENT_PASSTHROUGH=true,
-#      FF_COMPANY_ID_TO_CONTEXT_INTERCEPTOR=true, and the repo's OIDC sub/company mapping configured.
-#   3. Repo variables: PRODUCTION_PROJECT_ID (source project), DESCOPE_BASE_URL.
-# ExportSnapshot IS in the WIF method allowlist, so the exchange is not blocked by default-deny.
+# This calls the REST endpoint directly instead of using descopecli, because the
+# CLI does not yet send the three-part credential. Once it does, this whole step
+# collapses back to `uses: descope/descopecli/.github/actions/export`.
+#
+# ---------------------------------------------------------------------------
+# SETUP — every value here is NON-SECRET, so use repository *variables*
+# (Settings -> Secrets and variables -> Actions -> Variables), not secrets:
+#
+#   DESCOPE_BASE_URL    the API host, e.g. https://api.descope.com
+#   DESCOPE_PROJECT_ID  the project to export
+#   DESCOPE_KEY_ID      the management key ID this token acts as (K2...)
+#   DESCOPE_AUDIENCE    optional. Must equal the target environment's
+#                       GetDescopeAPIBaseURL(); defaults to
+#                       https://api.descope.com. Set it explicitly when testing
+#                       against a non-production environment.
+#
+# On the Descope side, add a trusted issuer bound to that management key:
+#   issuer   https://token.actions.githubusercontent.com
+#   key      the same DESCOPE_KEY_ID
+#   sub      repo:davidbemer/wif-snapshot-export:ref:refs/heads/main
+#   aud      the same value as DESCOPE_AUDIENCE
+#   max token lifetime   at least 60 seconds (mandatory; 0 is rejected)
+#
+# The environment must be running the WIF backend branch with the feature flag on.
+# GitHub-hosted runners cannot reach localhost, so a local stack needs a tunnel.
+# ---------------------------------------------------------------------------
 name: wif-export
+
 on:
   workflow_dispatch:
+
 permissions:
-  id-token: write # REQUIRED — lets GitHub mint the OIDC token
+  # REQUIRED. Without it GitHub never sets ACTIONS_ID_TOKEN_REQUEST_URL and no
+  # token can be minted — the step below fails with an explicit message.
+  id-token: write
   contents: read
-env:
-  FILES_PATH: "ProjectSnapshot"
+
 jobs:
   export:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Export snapshot with a GitHub-minted OIDC token
+        env:
+          BASE_URL: ${{ vars.DESCOPE_BASE_URL }}
+          PROJECT_ID: ${{ vars.DESCOPE_PROJECT_ID }}
+          KEY_ID: ${{ vars.DESCOPE_KEY_ID }}
+          AUDIENCE: ${{ vars.DESCOPE_AUDIENCE }}
+        run: |
+          set -euo pipefail
 
-      # Step 1: Mint the OIDC token cleanly using GitHub's core JS library
-      - name: Fetch OIDC Token
-        id: oidc
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const token = await core.getIDToken('descope');
-            core.setOutput('token', token);
+          : "${BASE_URL:?set the DESCOPE_BASE_URL repository variable}"
+          : "${PROJECT_ID:?set the DESCOPE_PROJECT_ID repository variable}"
+          : "${KEY_ID:?set the DESCOPE_KEY_ID repository variable}"
+          AUDIENCE="${AUDIENCE:-https://api.descope.com}"
 
-      - name: Export Snapshot
-        id: export
-        uses: descope/descopecli/.github/actions/export@35606baf32f349fd252223b994c7bde914780f3a
-        with:
-          project_id: ${{ vars.PRODUCTION_PROJECT_ID }}
-          workload_identity_token: "CATO"
-          descope_base_url: ${{ vars.DESCOPE_BASE_URL }}
-          files_path: ${{ env.FILES_PATH }}
-          descopecli_version: 35606baf32f349fd252223b994c7bde914780f3a
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::No OIDC endpoint available. Add 'permissions: id-token: write' to this job."
+            exit 1
+          fi
+
+          # 1. Ask GitHub for a token for the Descope audience. This is exactly what
+          #    the CLI will do in-process, which is why the token never becomes a
+          #    workflow input or an output.
+          echo "Requesting an OIDC token for audience: $AUDIENCE"
+          TOKEN="$(curl -sS --fail-with-body -G \
+            --data-urlencode "audience=$AUDIENCE" \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')"
+          echo "::add-mask::$TOKEN"
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::GitHub did not return an OIDC token."
+            exit 1
+          fi
+
+          # 2. Print the subject this token carries. It is this workflow's own
+          #    identity, not a secret, and it is the one thing you need in order to
+          #    fix an allowed-subject pattern that does not match.
+          PAYLOAD="$(printf '%s' "$TOKEN" | cut -d. -f2 | tr '_-' '/+')"
+          case $(( ${#PAYLOAD} % 4 )) in
+            2) PAYLOAD="${PAYLOAD}==" ;;
+            3) PAYLOAD="${PAYLOAD}=" ;;
+          esac
+          echo "token sub: $(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.sub' || echo '<undecodable>')"
+          echo "token aud: $(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.aud' || echo '<undecodable>')"
+
+          # 3. Export, naming the management key in the credential.
+          echo "POST $BASE_URL/v1/mgmt/project/snapshot/export"
+          HTTP_CODE="$(curl -sS -o snapshot.json -w '%{http_code}' \
+            -X POST "$BASE_URL/v1/mgmt/project/snapshot/export" \
+            -H "Authorization: Bearer $PROJECT_ID:$TOKEN:$KEY_ID" \
+            -H "Content-Type: application/json" \
+            -d '{}')"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Export failed with HTTP $HTTP_CODE"
+            # The body carries the reason. A 401 is an authentication or claim-filter
+            # rejection; a 5xx means the issuer's metadata or JWKS could not be
+            # fetched, which is retryable and NOT a bad credential.
+            cat snapshot.json || true
+            exit 1
+          fi
+
+          jq -r '"exported \(.files | length) files"' snapshot.json
 
       - name: Upload snapshot artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: project-snapshot
-          path: ${{ env.FILES_PATH }}
-          if-no-files-found: ignore
+          path: snapshot.json
+          if-no-files-found: warn
