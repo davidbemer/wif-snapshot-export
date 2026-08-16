@@ -16,19 +16,17 @@
 # SETUP — every value here is NON-SECRET, so use repository *variables*
 # (Settings -> Secrets and variables -> Actions -> Variables), not secrets:
 #
-#   DESCOPE_BASE_URL    the API host, e.g. https://api.descope.com
-#   DESCOPE_PROJECT_ID  the project to export
-#   DESCOPE_KEY_ID      the management key ID this token acts as (K2...)
-#   DESCOPE_AUDIENCE    optional. Must equal the target environment's
-#                       GetDescopeAPIBaseURL(); defaults to
-#                       https://api.descope.com. Set it explicitly when testing
-#                       against a non-production environment.
+#   DESCOPE_BASE_URL       the API host, e.g. https://davidb.descope.team
+#   PRODUCTION_PROJECT_ID  the project to export
+#   DESCOPE_KEY_ID         the management key ID this token acts as (K2...)
+#
+# The OIDC audience is hardcoded below to https://api.descope.com.
 #
 # On the Descope side, add a trusted issuer bound to that management key:
 #   issuer   https://token.actions.githubusercontent.com
 #   key      the same DESCOPE_KEY_ID
 #   sub      repo:davidbemer/wif-snapshot-export:ref:refs/heads/main
-#   aud      the same value as DESCOPE_AUDIENCE
+#   aud      https://api.descope.com
 #   max token lifetime   at least 60 seconds (mandatory; 0 is rejected)
 #
 # The environment must be running the WIF backend branch with the feature flag on.
@@ -40,8 +38,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # REQUIRED. Without it GitHub never sets ACTIONS_ID_TOKEN_REQUEST_URL and no
-  # token can be minted — the step below fails with an explicit message.
+  # REQUIRED. Without it core.getIDToken() has no OIDC endpoint to call.
   id-token: write
   contents: read
 
@@ -49,42 +46,35 @@ jobs:
   export:
     runs-on: ubuntu-latest
     steps:
+      - name: Mint OIDC token
+        id: mint
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('https://api.descope.com');
+            core.setSecret(token);
+            core.setOutput('token', token);
+
       - name: Export snapshot with a GitHub-minted OIDC token
         env:
           BASE_URL: ${{ vars.DESCOPE_BASE_URL }}
-          PROJECT_ID: ${{ vars.DESCOPE_PROJECT_ID }}
+          PROJECT_ID: ${{ vars.PRODUCTION_PROJECT_ID }}
           KEY_ID: ${{ vars.DESCOPE_KEY_ID }}
-          AUDIENCE: ${{ vars.DESCOPE_AUDIENCE }}
+          TOKEN: ${{ steps.mint.outputs.token }}
         run: |
           set -euo pipefail
 
           : "${BASE_URL:?set the DESCOPE_BASE_URL repository variable}"
-          : "${PROJECT_ID:?set the DESCOPE_PROJECT_ID repository variable}"
+          : "${PROJECT_ID:?set the PRODUCTION_PROJECT_ID repository variable}"
           : "${KEY_ID:?set the DESCOPE_KEY_ID repository variable}"
-          AUDIENCE="${AUDIENCE:-https://api.descope.com}"
-
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "::error::No OIDC endpoint available. Add 'permissions: id-token: write' to this job."
-            exit 1
-          fi
-
-          # 1. Ask GitHub for a token for the Descope audience. This is exactly what
-          #    the CLI will do in-process, which is why the token never becomes a
-          #    workflow input or an output.
-          echo "Requesting an OIDC token for audience: $AUDIENCE"
-          TOKEN="$(curl -sS --fail-with-body -G \
-            --data-urlencode "audience=$AUDIENCE" \
-            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')"
-          echo "::add-mask::$TOKEN"
           if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
             echo "::error::GitHub did not return an OIDC token."
             exit 1
           fi
 
-          # 2. Print the subject this token carries. It is this workflow's own
-          #    identity, not a secret, and it is the one thing you need in order to
-          #    fix an allowed-subject pattern that does not match.
+          # Print the subject this token carries. It is this workflow's own
+          # identity, not a secret, and it is the one thing you need in order to
+          # fix an allowed-subject pattern that does not match.
           PAYLOAD="$(printf '%s' "$TOKEN" | cut -d. -f2 | tr '_-' '/+')"
           case $(( ${#PAYLOAD} % 4 )) in
             2) PAYLOAD="${PAYLOAD}==" ;;
@@ -93,7 +83,7 @@ jobs:
           echo "token sub: $(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.sub' || echo '<undecodable>')"
           echo "token aud: $(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.aud' || echo '<undecodable>')"
 
-          # 3. Export, naming the management key in the credential.
+          # Export, naming the management key in the credential.
           echo "POST $BASE_URL/v1/mgmt/project/snapshot/export"
           HTTP_CODE="$(curl -sS -o snapshot.json -w '%{http_code}' \
             -X POST "$BASE_URL/v1/mgmt/project/snapshot/export" \
