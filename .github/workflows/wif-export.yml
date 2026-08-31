@@ -87,7 +87,7 @@ jobs:
           echo "POST $BASE_URL/v1/mgmt/project/snapshot/export"
           HTTP_CODE="$(curl -sS -o snapshot.json -w '%{http_code}' \
             -X POST "$BASE_URL/v1/mgmt/project/snapshot/export" \
-            -H "Authorization: Bearer $PROJECT_ID:$TOKEN:$KEY_ID" \
+            -H "Authorization: Bearer $PROJECT_ID:$TOKEN" \
             -H "Content-Type: application/json" \
             -d '{}')"
 
