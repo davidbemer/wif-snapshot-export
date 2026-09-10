@@ -40,10 +40,6 @@ jobs:
         with:
           # the project to export from
           project_id: P3G5Tn8whDfpA74AtbKPAEdcRf96
-
-          # the management key the token acts as - an identifier, not a secret
-          management_key_id: K3J7uVYuXM6V9SacU0dOD8qCMqqk
-
           # the audience the token is requested for, which is what names the key to the API.
           # omit this to let the action derive `<descope_base_url>/<management_key_id>`, and set
           # it only when the server's API base URL differs from the URL below
