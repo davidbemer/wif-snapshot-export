@@ -36,7 +36,7 @@ jobs:
 
       - name: Export Snapshot
         id: export
-        uses: descope/descopecli/.github/actions/export@feat/wif-token-credential
+        uses: descope/descopecli/.github/actions/export@0f44607
         with:
           # the project to export from
           project_id: P3G5Tn8whDfpA74AtbKPAEdcRf96
@@ -55,7 +55,7 @@ jobs:
           files_path: ./descope_export
 
           # build the CLI from the same PR as the action, so both sides speak the new credential
-          descopecli_version: feat/wif-token-credential
+          descopecli_version: 0f44607
 
       - name: Show the exported snapshot
         run: |
