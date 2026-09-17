@@ -1,29 +1,30 @@
-# Example: export a project snapshot using Workload Identity Federation.
+# Export a project snapshot using Workload Identity Federation.
 #
 # Proves the CLI can authenticate to the Management API with the short-lived OIDC token this
-# job requests for itself, instead of a stored management key. Nothing secret is configured.
+# job requests for itself, instead of a stored management key. Nothing secret is configured:
+# management_key here is the key *id*, which is an identifier.
 #
-# The action requests the token itself. It asks GitHub for one whose `aud` is the management
-# key being assumed, `<apiBaseUrl>/<keyId>`, and hands it to the CLI as
-# DESCOPE_WORKLOAD_IDENTITY_TOKEN. The CLI sends `Bearer <projectId>:<jwt>` and the Management
-# API reads the key id back out of the verified audience.
-#
-# This is an example: fill in the three placeholders below before running it. It is
-# workflow_dispatch only, so it never runs on push.
+# The export action requests the token itself, for the audience `<descope_base_url>/<key id>`,
+# and passes it to the CLI as DESCOPE_MANAGEMENT_KEY. The CLI sends `Bearer <projectId>:<jwt>`
+# and the Management API reads the key id back out of the verified audience.
 #
 # Before it can succeed, on the Descope side:
 #   - the management key must be federated to the GitHub issuer
-#     (https://token.actions.githubusercontent.com) with claim filters that match this repo
+#     (https://token.actions.githubusercontent.com) with claim filters matching this repo
 #   - the target environment must be running the WIF backend (descope/backend#2038)
+#   - that environment's DESCOPE_API_BASE_URL must equal descope_base_url below, since the
+#     audience is derived from it and a mismatch is a silent 401
 
 name: wif-export
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   # REQUIRED - without this GitHub will not mint an OIDC token for the job and the action fails
-  # with "No OIDC token endpoint is available"
   id-token: write
   contents: read
 
@@ -36,22 +37,22 @@ jobs:
 
       - name: Export Snapshot
         id: export
-        uses: descope/descopecli/.github/actions/export@a4e06d024ad154f0362242d277e2722a2b5ed0a7
+        uses: descope/descopecli/.github/actions/export@a33947d492c76c93aa915d49b22b65acc95f1de0
         with:
           # the project to export from
           project_id: P3G5Tn8whDfpA74AtbKPAEdcRf96
-          # the audience the token is requested for, which is what names the key to the API.
-          # omit this to let the action derive `<descope_base_url>/<management_key_id>`, and set
-          # it only when the server's API base URL differs from the URL below
-          token_audience: https://localhost:8443/K3J7uVYuXM6V9SacU0dOD8qCMqqk # https://api.descope.com/<management_key_id>
 
-          # where the CLI sends the request
+          # the id of the management key to assume, not its secret
+          management_key: K3JS8aDye0GRnTvoifvuifBp5sm3
+          use_oidc: true
+
+          # where the CLI sends the request, and what the token audience is derived from
           descope_base_url: https://davidb.descope.team
 
           files_path: ./descope_export
 
-          # build the CLI from the same PR as the action, so both sides speak the new credential
-          descopecli_version: a4e06d024ad154f0362242d277e2722a2b5ed0a7
+          # build the CLI from the same branch as the action, so both sides agree on the credential
+          descopecli_version: a33947d492c76c93aa915d49b22b65acc95f1de0
 
       - name: Show the exported snapshot
         run: |
