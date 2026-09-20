@@ -47,7 +47,7 @@ jobs:
           use_oidc: true
 
           # where the CLI sends the request, and what the token audience is derived from
-          descope_base_url: https://api.descope.org
+          # descope_base_url: https://api.descope.org
 
           files_path: ./descope_export
 
