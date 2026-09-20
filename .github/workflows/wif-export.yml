@@ -40,14 +40,14 @@ jobs:
         uses: descope/descopecli/.github/actions/export@a33947d492c76c93aa915d49b22b65acc95f1de0
         with:
           # the project to export from
-          project_id: P3G5Tn8whDfpA74AtbKPAEdcRf96
+          project_id: P3IfmhXacLB2jfrzai62ymhgKJCH
 
           # the id of the management key to assume, not its secret
-          management_key: P3IfmhXacLB2jfrzai62ymhgKJCH
+          management_key: K3Ja5lQE1ctzC9QlzL3F2fAux1RK
           use_oidc: true
 
           # where the CLI sends the request, and what the token audience is derived from
-          # descope_base_url: https://api.descope.org
+          descope_base_url: https://api.descope.org
 
           files_path: ./descope_export
 
