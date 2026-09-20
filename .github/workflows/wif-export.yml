@@ -43,11 +43,11 @@ jobs:
           project_id: P3G5Tn8whDfpA74AtbKPAEdcRf96
 
           # the id of the management key to assume, not its secret
-          management_key: K3JS9xqzLEqNBzwjV6w6msuN9YnN
+          management_key: P3IfmhXacLB2jfrzai62ymhgKJCH
           use_oidc: true
 
           # where the CLI sends the request, and what the token audience is derived from
-          descope_base_url: https://davidb.descope.team
+          descope_base_url: https://api.descope.org
 
           files_path: ./descope_export
 
