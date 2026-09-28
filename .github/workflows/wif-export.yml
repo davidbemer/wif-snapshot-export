@@ -43,7 +43,7 @@ jobs:
           project_id: P3IfmhXacLB2jfrzai62ymhgKJCH
 
           # the id of the management key to assume, not its secret
-          management_key: K3JxREHWlqpjg3UwB1sAf9T9cwFz
+          management_key: K3JxRdjrz0wP8Cq5QGkX7Is9jbxu
           use_oidc: true
 
           # where the CLI sends the request, and what the token audience is derived from
