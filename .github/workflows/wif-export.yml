@@ -37,7 +37,7 @@ jobs:
 
       - name: Export Snapshot
         id: export
-        uses: descope/descopecli/.github/actions/export@3a191cd55a8004107c3be66346c4f078bda521cb
+        uses: descope/descopecli/.github/actions/export@14e2c1fba3cbadfee5cbd06bb854eded3518d640
         with:
           # the project to export from
           project_id: P3BOsZMVntUqnJSHNZMwIPTaFIsl
@@ -52,7 +52,7 @@ jobs:
           files_path: ./descope_export
 
           # build the CLI from the same branch as the action, so both sides agree on the credential
-          descopecli_version: 3a191cd55a8004107c3be66346c4f078bda521cb
+          descopecli_version: 14e2c1fba3cbadfee5cbd06bb854eded3518d640
 
       - name: Show the exported snapshot
         run: |
